@@ -200,8 +200,8 @@ class single_consumer_frame_queue
     single_consumer_queue<T> _queue;
 
 public:
-    single_consumer_frame_queue< T >( unsigned int cap = QUEUE_MAX_SIZE,
-                                      std::function< void( T const & ) > on_drop_callback = nullptr )
+    single_consumer_frame_queue( unsigned int cap = QUEUE_MAX_SIZE,
+                                 std::function< void( T const & ) > on_drop_callback = nullptr )
         : _queue( cap, on_drop_callback )
     {
     }

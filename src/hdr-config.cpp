@@ -9,6 +9,16 @@
 
 namespace librealsense
 {
+    namespace
+    {
+        template< class T >
+        void append_bytes( std::vector< uint8_t > & out, T const & value )
+        {
+            auto begin = reinterpret_cast< uint8_t const * >( &value );
+            out.insert( out.end(), begin, begin + sizeof( T ) );
+        }
+    }  // namespace
+
     hdr_config::hdr_config(hw_monitor& hwm, std::shared_ptr<sensor_base> depth_ep,
         const option_range& exposure_range, const option_range& gain_range, hwmon_response_type no_data_to_return_opcode) :
         _hwm(hwm),
@@ -423,10 +433,11 @@ namespace librealsense
         uint8_t num_of_items = static_cast<uint8_t>(_sequence_size);
 
         std::vector<uint8_t> header;
-        header.insert(header.end(), &header_size, &header_size + 1);
-        header.insert(header.end(), &_id, &_id + 1);
-        header.insert(header.end(), (uint8_t*)&iterations, (uint8_t*)&iterations + 2);
-        header.insert(header.end(), &num_of_items, &num_of_items + 1);
+        header.reserve( 5 );
+        append_bytes( header, header_size );
+        append_bytes( header, static_cast< uint8_t >( _id ) );
+        append_bytes( header, iterations );
+        append_bytes( header, num_of_items );
 
         return header;
     }
@@ -441,22 +452,24 @@ namespace librealsense
         uint8_t num_of_controls = 2;
 
         std::vector<uint8_t> frame_header;
-        frame_header.insert(frame_header.end(), &frame_header_size, &frame_header_size + 1);
-        frame_header.insert(frame_header.end(), (uint8_t*)&iterations, (uint8_t*)&iterations + 2);
-        frame_header.insert(frame_header.end(), &num_of_controls, &num_of_controls + 1);
+        frame_header.reserve( 4 );
+        append_bytes( frame_header, frame_header_size );
+        append_bytes( frame_header, iterations );
+        append_bytes( frame_header, num_of_controls );
 
         std::vector<uint8_t> frames_config;
+        frames_config.reserve( _sequence_size * ( frame_header.size() + 10 ) );
         for (int i = 0; i < _sequence_size; ++i)
         {
-            frames_config.insert(frames_config.end(), &frame_header[0], &frame_header[0] + frame_header.size());
+            frames_config.insert( frames_config.end(), frame_header.begin(), frame_header.end() );
 
             uint32_t exposure_value = static_cast<uint32_t>(_hdr_sequence_params[i]._exposure);
-            frames_config.insert(frames_config.end(), &CONTROL_ID_EXPOSURE, &CONTROL_ID_EXPOSURE + 1);
-            frames_config.insert(frames_config.end(), (uint8_t*)&exposure_value, (uint8_t*)&exposure_value + 4);
+            append_bytes( frames_config, CONTROL_ID_EXPOSURE );
+            append_bytes( frames_config, exposure_value );
 
             uint32_t gain_value = static_cast<uint32_t>(_hdr_sequence_params[i]._gain);
-            frames_config.insert(frames_config.end(), &CONTROL_ID_GAIN, &CONTROL_ID_GAIN + 1);
-            frames_config.insert(frames_config.end(), (uint8_t*)&gain_value, (uint8_t*)&gain_value + 4);
+            append_bytes( frames_config, CONTROL_ID_GAIN );
+            append_bytes( frames_config, gain_value );
         }
 
         return frames_config;

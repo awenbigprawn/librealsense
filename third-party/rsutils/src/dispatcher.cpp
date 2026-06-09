@@ -5,6 +5,12 @@
 #include <rsutils/easylogging/easyloggingpp.h>
 #include <rsutils/time/waiting-on.h>
 
+#ifdef __linux__
+#include <pthread.h>
+#include <sched.h>
+#endif
+
+
 dispatcher::dispatcher( unsigned int cap, std::function< void( action ) > on_drop_callback )
     : _queue( cap, on_drop_callback )
     , _was_stopped( true )
@@ -13,6 +19,15 @@ dispatcher::dispatcher( unsigned int cap, std::function< void( action ) > on_dro
     // We keep a running thread that takes stuff off our queue and dispatches them
     _thread = std::thread([&]()
     {
+#ifdef __linux__
+        // Prefer real-time scheduling for dispatcher threads.
+        // int policy = SCHED_OTHER;
+        // sched_param params;
+        // params.sched_priority = sched_get_priority_max(policy);
+        // if( pthread_setschedparam( _thread.native_handle(), policy, &params ) != 0 )
+        // LOG_ERROR("Dispatcher [" << this << "] failed to set thread scheduling policy");
+#endif
+
         int timeout_ms = 5000;
         while( _is_alive )
         {

@@ -132,7 +132,7 @@ namespace librealsense
                         try
                         {
                             std::weak_ptr< pointcloud > wr{ _registered_auto_calib_cb };
-                            auto fn = [=]( rs2_calibration_status status ) {
+                            auto fn = [wr, dev, this]( rs2_calibration_status status ) {
                                 auto r = wr.lock();
                                 if( ! r )
                                     // nobody there any more!
