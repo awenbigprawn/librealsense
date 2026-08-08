@@ -2,6 +2,13 @@
 // Copyright(c) 2023-4 RealSense, Inc. All Rights Reserved.
 
 #include "uvc-sensor.h"
+#if defined(RS_CAMERA_V4L2_DIAGNOSTICS)
+#include "linux/v4l2-diagnostic-trace.h"
+#define RS_SENSOR_DIAGNOSTIC_RECORD(...) \
+    platform::v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_SENSOR_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
 #include "device.h"
 #include "stream.h"
 #include "image.h"
@@ -138,6 +145,8 @@ void uvc_sensor::open( const stream_profiles & requests )
                         return;
                     }
 
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_timestamp_begin, -1 );
                     auto && fr = generate_frame_from_data( f,
                                                                  system_time,
                                                                  _timestamp_reader.get(),
@@ -148,6 +157,11 @@ void uvc_sensor::open( const stream_profiles & requests )
                     auto bpp = get_image_bpp( req_profile_base->get_format() );
                     auto & frame_counter = fr->additional_data.frame_number;
                     auto & timestamp = fr->additional_data.timestamp;
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_timestamp_end,
+                        -1,
+                        0,
+                        static_cast< uint32_t >( frame_counter ) );
 
                     // D457 development
                     size_t expected_size = 0;
@@ -200,17 +214,33 @@ void uvc_sensor::open( const stream_profiles & requests )
                     // Compressed and inference streams carry variable-length payloads; copy the data as received.
                     if( val_in_range( req_profile_base->get_format(), { RS2_FORMAT_MJPEG } ) || is_inference )
                         expected_size = f.frame_size;
+                    const auto diagnostic_frame_number = static_cast< uint32_t >( frame_counter );
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_allocate_begin,
+                        -1,
+                        0,
+                        diagnostic_frame_number );
                     frame_holder fh = _source.alloc_frame(
                         { req_profile_base->get_stream_type(), req_profile_base->get_stream_index(), extension },
                         expected_size,
                         std::move( fr->additional_data ),
                         true );
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_allocate_end,
+                        -1,
+                        fh.frame ? 1 : 0,
+                        diagnostic_frame_number );
                     auto diff = time_service::get_time() - system_time;
                     if( diff > 10 )
                         LOG_DEBUG( "!! Frame allocation took " << diff << " msec" );
 
                     if( fh.frame )
                     {
+                        RS_SENSOR_DIAGNOSTIC_RECORD(
+                            platform::v4l2_diagnostic::stage::sensor_copy_begin,
+                            -1,
+                            static_cast< int >( expected_size ),
+                            diagnostic_frame_number );
                         // method should be limited to use of MIPI - not for USB
                         // the aim is to grab the data from a bigger buffer, which is aligned to 64 bytes,
                         // when the resolution's width is not aligned to 64
@@ -233,6 +263,11 @@ void uvc_sensor::open( const stream_profiles & requests )
                             assert( is_inference || expected_size == sizeof( uint8_t ) * f.frame_size );
                             memcpy( (void *)fh->get_frame_data(), f.pixels, expected_size );
                         }
+                        RS_SENSOR_DIAGNOSTIC_RECORD(
+                            platform::v4l2_diagnostic::stage::sensor_copy_end,
+                            -1,
+                            static_cast< int >( expected_size ),
+                            diagnostic_frame_number );
 
                         auto && video = dynamic_cast< video_frame * >( fh.frame );
                         if( video )
@@ -250,7 +285,17 @@ void uvc_sensor::open( const stream_profiles & requests )
 
                     // calling the continuation method, and releasing the backend frame buffer
                     // since the content of the OS frame buffer has been copied, it can released ASAP
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_continue_begin,
+                        -1,
+                        0,
+                        diagnostic_frame_number );
                     continuation();
+                    RS_SENSOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::sensor_continue_end,
+                        -1,
+                        0,
+                        diagnostic_frame_number );
 
                     if (!fh.frame)
                     {
@@ -268,7 +313,17 @@ void uvc_sensor::open( const stream_profiles & requests )
                         // Invoke first callback
                         auto callback_start_time = time_service::get_time();
                         auto callback = fh->get_owner()->begin_callback();
+                        RS_SENSOR_DIAGNOSTIC_RECORD(
+                            platform::v4l2_diagnostic::stage::sensor_invoke_begin,
+                            -1,
+                            0,
+                            diagnostic_frame_number );
                         _source.invoke_callback( std::move( fh ) );
+                        RS_SENSOR_DIAGNOSTIC_RECORD(
+                            platform::v4l2_diagnostic::stage::sensor_invoke_end,
+                            -1,
+                            0,
+                            diagnostic_frame_number );
 
                         // Log callback ended
                         log_callback_end( fps, callback_start_time, time_service::get_time(), stream_type, frame_number );

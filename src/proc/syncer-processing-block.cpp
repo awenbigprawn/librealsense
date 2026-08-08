@@ -8,6 +8,13 @@
 #include "proc/syncer-processing-block.h"
 #include <src/core/frame-processor-callback.h>
 
+#ifdef RS_CAMERA_V4L2_DIAGNOSTICS
+#include "../linux/v4l2-diagnostic-trace.h"
+#define RS_SYNCER_DIAGNOSTIC_RECORD(...) platform::v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_SYNCER_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
+
 
 namespace librealsense
 {
@@ -32,6 +39,9 @@ namespace librealsense
         // frame order per stream.
         auto f = [&, log](frame_holder && frame, synthetic_source_interface* source)
         {
+            auto const diagnostic_frame_number = frame && frame.frame
+                ? static_cast< uint32_t >( frame.frame->get_frame_number() )
+                : 0;
             // if the syncer is disabled passthrough the frame
             bool enabled = false;
             size_t n_opts = 0;
@@ -54,6 +64,11 @@ namespace librealsense
                 return;
             }
             LOG_DEBUG( "--> syncing " << frame );
+            RS_SYNCER_DIAGNOSTIC_RECORD(
+                platform::v4l2_diagnostic::stage::syncer_match_begin,
+                -1,
+                0,
+                diagnostic_frame_number );
             {
                 std::lock_guard<std::mutex> lock(_mutex);
                 if( ! _matcher->get_active() )
@@ -63,6 +78,11 @@ namespace librealsense
                 }
                 _matcher->dispatch(std::move(frame), { source, _matches, log });
             }
+            RS_SYNCER_DIAGNOSTIC_RECORD(
+                platform::v4l2_diagnostic::stage::syncer_match_end,
+                -1,
+                0,
+                diagnostic_frame_number );
 
             frame_holder f;
             {
@@ -75,7 +95,20 @@ namespace librealsense
                 while (_matches.try_dequeue(&f))
                 {
                     LOG_DEBUG( "--> frame ready: " << *f.frame );
+                    auto const emitted_frame_number = f && f.frame
+                        ? static_cast< uint32_t >( f.frame->get_frame_number() )
+                        : 0;
+                    RS_SYNCER_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::syncer_emit_begin,
+                        -1,
+                        0,
+                        emitted_frame_number );
                     get_source().frame_ready(std::move(f));
+                    RS_SYNCER_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::syncer_emit_end,
+                        -1,
+                        0,
+                        emitted_frame_number );
                 }
             }
 
@@ -91,4 +124,3 @@ namespace librealsense
         _matcher->stop();
     }
 }
-

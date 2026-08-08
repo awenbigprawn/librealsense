@@ -9,6 +9,12 @@
 #include "backend-hid.h"
 #include "backend.h"
 #include "types.h"
+#if defined(RS_CAMERA_V4L2_DIAGNOSTICS)
+#include "v4l2-diagnostic-trace.h"
+#define RS_V4L2_DIAGNOSTIC_RECORD(...) v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_V4L2_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
 #if defined(USING_UDEV)
 #include "udev-device-watcher.h"
 #else
@@ -423,7 +429,12 @@ namespace librealsense
                 }
 
                 LOG_DEBUG_V4L("Enqueue buf " << std::dec << _buf.index << " for fd " << fd);
-                if (xioctl(fd, VIDIOC_QBUF, &_buf) < 0)
+                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::requeue_begin,
+                                          fd, 0, _buf.sequence);
+                auto qbuf_result = xioctl(fd, VIDIOC_QBUF, &_buf);
+                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::requeue_end,
+                                          fd, qbuf_result, _buf.sequence);
+                if (qbuf_result < 0)
                 {
                     LOG_ERROR("xioctl(VIDIOC_QBUF) failed when requesting new frame! fd: " << fd << " error: " << strerror(errno));
                 }
@@ -1803,6 +1814,7 @@ namespace librealsense
             } while (val < 0 && errno == EINTR);
 
             LOG_DEBUG_V4L("Select done, val = " << val << " at " << time_in_HH_MM_SS_MMM());
+            RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::select_return, _fd, val);
             if(val < 0)
             {
                 _is_capturing = false;
@@ -1847,7 +1859,9 @@ namespace librealsense
 
                         // METADATA STREAM
                         // Read metadata. Metadata node performs a blocking call to ensure video and metadata sync
+                        RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_begin, _fd);
                         acquire_metadata(buf_mgr,fds,compressed_format);
+                        RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_end, _fd);
                         md_extracted = true;
 
                         if (wa_applied)
@@ -1868,7 +1882,11 @@ namespace librealsense
                                 buf.m.planes = planes;
                                 buf.length = VIDEO_MAX_PLANES;
                             }
-                            if(xioctl(_fd, VIDIOC_DQBUF, &buf) < 0)
+                            RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::video_dqbuf_begin, _fd);
+                            auto dqbuf_result = xioctl(_fd, VIDIOC_DQBUF, &buf);
+                            RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::video_dqbuf_end,
+                                                      _fd, dqbuf_result, buf.sequence);
+                            if(dqbuf_result < 0)
                             {
                                 LOG_DEBUG_V4L("Dequeued empty buf for fd " << std::dec << _fd);
                             }
@@ -1945,7 +1963,9 @@ namespace librealsense
                                             timestamp = monotonic_to_realtime(timestamp);
 
                                             // Read metadata. Metadata node performs a blocking call to ensure video and metadata sync
+                                            RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_begin, _fd);
                                             acquire_metadata(buf_mgr,fds,compressed_format);
+                                            RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_end, _fd);
                                             md_extracted = true;
 
                                             if (wa_applied)
@@ -1965,9 +1985,13 @@ namespace librealsense
                                             if (buf_mgr.verify_vd_md_sync())
                                             {
                                                 //Invoke user callback and enqueue next frame
+                                                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_begin,
+                                                                          _fd, 0, buf.sequence);
                                                 _callback(_profile, fo, [buf_mgr]() mutable {
                                                     buf_mgr.request_next_frame();
                                                 });
+                                                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_end,
+                                                                          _fd, 0, buf.sequence);
                                             }
                                             else
                                             {
@@ -2005,9 +2029,13 @@ namespace librealsense
                                                             buffer->get_frame_start(), md_start, timestamp };
 
                                                 //Invoke user callback and enqueue next frame
+                                                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_begin,
+                                                                          _fd, 0, buf.sequence);
                                                 _callback(_profile, fo, [buf_mgr]() mutable {
                                                     buf_mgr.request_next_frame();
                                                 });
+                                                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_end,
+                                                                          _fd, 0, buf.sequence);
                                             }
                                             else
                                             {
@@ -2110,9 +2138,13 @@ namespace librealsense
                                      video_buffer->get_frame_start(), buf_mgr.metadata_start(), timestamp };
 
                     //Invoke user callback and enqueue next frame
+                    RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_begin,
+                                              video_fd, 0, video_v4l2_buffer->sequence);
                     _callback(_profile, fo, [buf_mgr]() mutable {
                         buf_mgr.request_next_frame();
                     });
+                    RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::callback_end,
+                                              video_fd, 0, video_v4l2_buffer->sequence);
                 }
                 else
                 {
@@ -2952,7 +2984,11 @@ namespace librealsense
                 buf.memory = _use_memory_map ? V4L2_MEMORY_MMAP : V4L2_MEMORY_USERPTR;
 
                 // W/O multiplexing this will create a blocking call for metadata node
-                if(xioctl(_md_fd, VIDIOC_DQBUF, &buf) < 0)
+                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_dqbuf_begin, _md_fd);
+                auto dqbuf_result = xioctl(_md_fd, VIDIOC_DQBUF, &buf);
+                RS_V4L2_DIAGNOSTIC_RECORD(v4l2_diagnostic::stage::metadata_dqbuf_end,
+                                          _md_fd, dqbuf_result, buf.sequence);
+                if(dqbuf_result < 0)
                 {
                     LOG_DEBUG_V4L("Dequeued empty buf for md fd " << std::dec << _md_fd);
                 }
