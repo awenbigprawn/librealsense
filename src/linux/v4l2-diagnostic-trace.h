@@ -50,6 +50,10 @@ enum class stage : uint16_t
     syncer_match_end,
     syncer_emit_begin,
     syncer_emit_end,
+    aggregator_enqueue_begin,
+    aggregator_enqueue_end,
+    pipeline_wait_begin,
+    pipeline_wait_end,
 };
 
 struct file_header

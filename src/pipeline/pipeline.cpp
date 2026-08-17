@@ -13,6 +13,12 @@
 #endif
 
 #include <rsutils/string/from.h>
+#ifdef RS_CAMERA_V4L2_DIAGNOSTICS
+#include "../linux/v4l2-diagnostic-trace.h"
+#define RS_PIPELINE_DIAGNOSTIC_RECORD(...) platform::v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_PIPELINE_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
 
 
 namespace librealsense
@@ -258,10 +264,19 @@ namespace librealsense
             }
 
             frame_holder f;
+            RS_PIPELINE_DIAGNOSTIC_RECORD(
+                platform::v4l2_diagnostic::stage::pipeline_wait_begin, -1);
             if (_aggregator->dequeue(&f, timeout_ms))
             {
+                RS_PIPELINE_DIAGNOSTIC_RECORD(
+                    platform::v4l2_diagnostic::stage::pipeline_wait_end,
+                    -1,
+                    1,
+                    f ? static_cast<uint32_t>(f->get_frame_number()) : 0);
                 return f;
             }
+            RS_PIPELINE_DIAGNOSTIC_RECORD(
+                platform::v4l2_diagnostic::stage::pipeline_wait_end, -1, 0);
 
             //hub returns true even if device already reconnected
             if (!_hub->is_connected(*_active_profile->get_device()))
@@ -272,8 +287,15 @@ namespace librealsense
                     unsafe_stop();
                     unsafe_start(prev_conf);
 
+                    RS_PIPELINE_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::pipeline_wait_begin, -1);
                     if (_aggregator->dequeue(&f, timeout_ms))
                     {
+                        RS_PIPELINE_DIAGNOSTIC_RECORD(
+                            platform::v4l2_diagnostic::stage::pipeline_wait_end,
+                            -1,
+                            1,
+                            f ? static_cast<uint32_t>(f->get_frame_number()) : 0);
                         return f;
                     }
 

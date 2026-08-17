@@ -6,6 +6,12 @@
 #include "aggregator.h"
 #include <src/composite-frame.h>
 #include <src/core/frame-processor-callback.h>
+#ifdef RS_CAMERA_V4L2_DIAGNOSTICS
+#include "../linux/v4l2-diagnostic-trace.h"
+#define RS_AGGREGATOR_DIAGNOSTIC_RECORD(...) platform::v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_AGGREGATOR_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
 
 namespace librealsense
 {
@@ -75,7 +81,18 @@ namespace librealsense
                 source->frame_ready(async_fref.clone());
 
                 // for sync pipeline usage - push the aggregated to the output queue
+                auto sequence = static_cast<uint32_t>(sync_fref->get_frame_number());
+                RS_AGGREGATOR_DIAGNOSTIC_RECORD(
+                    platform::v4l2_diagnostic::stage::aggregator_enqueue_begin,
+                    -1,
+                    0,
+                    sequence);
                 _queue->enqueue(sync_fref.clone());
+                RS_AGGREGATOR_DIAGNOSTIC_RECORD(
+                    platform::v4l2_diagnostic::stage::aggregator_enqueue_end,
+                    -1,
+                    0,
+                    sequence);
             }
             else
             {
@@ -95,7 +112,18 @@ namespace librealsense
                         return;
                     }
                     // for sync pipeline usage - push the aggregated to the output queue
+                    auto sequence = static_cast<uint32_t>(sync_fref->get_frame_number());
+                    RS_AGGREGATOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::aggregator_enqueue_begin,
+                        -1,
+                        0,
+                        sequence);
                     _queue->enqueue(sync_fref.clone());
+                    RS_AGGREGATOR_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::aggregator_enqueue_end,
+                        -1,
+                        0,
+                        sequence);
                 }
             }
         }
