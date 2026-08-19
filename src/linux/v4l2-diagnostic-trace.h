@@ -54,6 +54,8 @@ enum class stage : uint16_t
     aggregator_enqueue_end,
     pipeline_wait_begin,
     pipeline_wait_end,
+    format_convert_begin,
+    format_convert_end,
 };
 
 struct file_header

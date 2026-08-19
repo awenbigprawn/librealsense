@@ -19,6 +19,13 @@
 #include "core/stream-profile-interface.h"
 #include "core/frame-callback.h"
 #include "core/notification.h"
+#if defined(RS_CAMERA_V4L2_DIAGNOSTICS)
+#include "linux/v4l2-diagnostic-trace.h"
+#define RS_FORMAT_DIAGNOSTIC_RECORD(...) \
+    platform::v4l2_diagnostic::record(__VA_ARGS__)
+#else
+#define RS_FORMAT_DIAGNOSTIC_RECORD(...) ((void)0)
+#endif
 #include <src/metadata-parser.h>
 
 
@@ -657,7 +664,24 @@ void log_callback_end( uint32_t fps,
 
         // Call the processing block on the frame
         _raw_sensor->start(
-            make_frame_callback( [&, this]( frame_holder f ) { _formats_converter.convert_frame( f ); } ) );
+            make_frame_callback(
+                [&, this]( frame_holder f )
+                {
+                    auto const frame_number = f && f.frame
+                        ? static_cast< uint32_t >( f->get_frame_number() )
+                        : 0;
+                    RS_FORMAT_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::format_convert_begin,
+                        -1,
+                        0,
+                        frame_number );
+                    _formats_converter.convert_frame( f );
+                    RS_FORMAT_DIAGNOSTIC_RECORD(
+                        platform::v4l2_diagnostic::stage::format_convert_end,
+                        -1,
+                        0,
+                        frame_number );
+                } ) );
     }
 
     void synthetic_sensor::stop()
